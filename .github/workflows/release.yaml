@@ -1,26 +1,53 @@
 name: Release
+
 on:
-  push:
-    tags:
-      - "v*.*.*"
+  create:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
 jobs:
-  goreleaser:
+  release:
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+        with:
+          version: v0.9.1
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 0
-      - name: Setup Go Version
-        run: echo "GO_VERSION=$(cat .go-version)" >> $GITHUB_ENV
-      - name: Setup Go
-        uses: actions/setup-go@v3
+
+      - name: "Fetch latest tag"
+        id: get-latest-tag
+        uses: "WyriHaximus/github-action-get-previous-tag@v1"
+
+      - name: Build and push
+        id: docker_build
+        uses: docker/build-push-action@v3
         with:
-          go-version: ${{ env.GO_VERSION }}
-      - name: GoReleaser
-        uses: goreleaser/goreleaser-action@v3
-        with:
-          version: latest
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          build-args: |
+            TAG=${{ steps.get-latest-tag.outputs.tag }}
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ghcr.io/streamersonglist/aws-encryption-provider:1
+            ghcr.io/streamersonglist/aws-encryption-provider:${{ steps.get-latest-tag.outputs.tag }}
+
+      - name: Image digest
+        run: echo ${{ steps.docker_build.outputs.digest }}
